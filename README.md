@@ -109,9 +109,4 @@ Always archive prior version in `/Archive` before sharing externally.
 
 ---
 
-## 8. Support
-
-Ping Jake or the FP&A lead on Slack `#brogue-fin-model`  
-Bugs → GitHub issues in `BrogueDistillery/finance-model`.  
-
 Happy modeling—may your proof-gallons be ever cheap and your runway long.
