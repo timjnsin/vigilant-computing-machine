@@ -1,0 +1,216 @@
+[Continuation of Tab: Scenario Switcher]
+// SCENARIO PARAMETERS
+Scenario,Base Case,Upside Case,Downside Case
+Current Scenario,=Assumptions!B45,,
+Volume Year 1,50000,60000,40000
+Volume Growth Y2,30%,40%,20%
+Volume Growth Y3,25%,35%,15%
+Tasting Room Price,$80.00,$85.00,$75.00
+Club/Limited Price,$90.00,$95.00,$85.00
+Wholesale Price,$24.00,$26.00,$22.00
+Raw Spirit Cost (per proof gal),$11.00,$10.50,$12.00
+CapEx Overrun %,0%,-5%,15%
+Marketing % of Revenue,8.0%,7.0%,9.0%
+Series A Valuation,$30,000,000,$40,000,000,$20,000,000
+Headcount Cadence (Months Delay),0,-2,3
+
+// NOTE: The 'Assumptions' tab inputs should be driven by this table using the CHOOSE function.
+// For example, in the 'Assumptions' tab, the formula for 'Year 1 Production Target' would be:
+// =CHOOSE('Scenario Switcher'!B2, 'Scenario Switcher'!B3, 'Scenario Switcher'!C3, 'Scenario Switcher'!D3)
+// This should be applied to all relevant assumption cells to make the model fully dynamic.
+
+[Tab: Dashboards]
+// This tab provides a high-level visual summary of the distillery's performance.
+// Charts should be linked to the data sources below and formatted professionally.
+
+// 1. BREAKEVEN ANALYSIS
+Data Source for Chart:
+Metric,Monthly,Annually
+Units Sold,='Cashflow & Runway'!B39,='Cashflow & Runway'!N39
+Revenue,='Cashflow & Runway'!B2,='Cashflow & Runway'!N2
+Fixed Costs,='SG&A / OpEx'!B38,='SG&A / OpEx'!N38
+Variable Costs,='COGS Calculation'!B50,='COGS Calculation'!N50
+Total Costs,=C5+C6,=D5+D6
+Profit / Loss,=C4-C7,=D4-D7
+
+Breakeven Calculation:
+Avg Price per Bottle,='Revenue Engine'!N35/Revenue Engine!N16
+Avg Variable Cost per Bottle,='COGS Calculation'!N39/COGS Calculation!N4
+Contribution Margin per Bottle,=B12-B13
+Annual Fixed Costs,='SG&A / OpEx'!B43
+Breakeven Point (Bottles),=B15/B14
+Breakeven Point (Revenue),=B16*B12
+
+// Chart Area: Breakeven Chart
+// Type: Line chart with markers
+// X-Axis: Units Sold (monthly)
+// Y-Axis: Dollars
+// Series 1: Total Revenue (line)
+// Series 2: Total Costs (line)
+// Series 3: Fixed Costs (line)
+// Add a vertical line or marker at the Breakeven Point (Bottles).
+
+// 2. RUNWAY GAUGE
+Data Source for Gauge:
+Current Cash Position,='Cashflow & Runway'!M35
+Average Monthly Burn (Last 6 mo),='Cashflow & Runway'!M38
+Runway (Months),='Cashflow & Runway'!M39
+
+// Chart Area: Runway Gauge
+// Type: Speedometer or Donut chart
+// Shows 'Runway (Months)' value.
+// Color-coded sections: Red (0-3 months), Yellow (4-6 months), Green (7+ months).
+
+// 3. EBITDA WATERFALL (Year 1)
+Data Source for Chart:
+Item,Amount
+Net Revenue,='Cashflow & Runway'!N2
+COGS,=-'Cashflow & Runway'!N3
+Gross Profit,=SUM(B30:B31)
+Payroll,=-'SG&A / OpEx'!N30
+Rent,=-Assumptions!B28
+Marketing,=-'SG&A / OpEx'!N35
+Other OpEx,=-('SG&A / OpEx'!N38-Assumptions!B28-'SG&A / OpEx'!N35)
+EBITDA,=SUM(B30:B36)
+
+// Chart Area: EBITDA Waterfall
+// Type: Waterfall Chart
+// Shows the build-down from Revenue to EBITDA.
+
+// 4. INVESTOR IRR ANALYSIS
+Data Source for IRR Table:
+Investment,SAFE Round,Series A
+Amount,='Cap Table + SAFE Conversion'!B5,='Cap Table + SAFE Conversion'!B25
+Entry Date,Month 1,=Assumptions!B55
+Exit Date (Months),36,48,60
+Exit Valuation (Multiple of Series A Post-Money),2x,3x,5x
+
+IRR Table:
+Exit Multiple,Exit in 36 Months,Exit in 48 Months,Exit in 60 Months
+2x,=IRR({-B44,0,B43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47}),=IRR({-B44,0,0,B43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47, B48}),=IRR({-B44,0,0,0,B43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47, B48, B49})
+3x,=IRR({-B44,0,C43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47}),=IRR({-B44,0,0,C43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47, B48}),=IRR({-B44,0,0,0,C43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47, B48, B49})
+5x,=IRR({-B44,0,D43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47}),=IRR({-B44,0,0,D43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47, B48}),=IRR({-B44,0,0,0,D43*'Cap Table + SAFE Conversion'!B41*B47}, {B45, B46, B47, B48, B49})
+
+// 5. KEY METRICS DASHBOARD (Year 1)
+Metric,Value,Trend (vs. prior period)
+Net Revenue (Monthly Avg),=AVERAGE('Cashflow & Runway'!B2:M2)
+Gross Margin %,='Cashflow & Runway'!N5
+EBITDA Margin %,='Cashflow & Runway'!N12
+Cash Conversion Cycle,"= (Avg Inventory / (COGS/365)) + (Avg AR / (Revenue/365)) - (Avg AP / (COGS/365))
+NOTE: Requires Balance Sheet assumptions for Inventory, AR, AP not yet built."
+Inventory Turns,"= COGS / Avg Inventory
+NOTE: Requires Balance Sheet assumptions."
+LTV / CAC Ratio,"= (Avg Revenue per Customer * GM %) / (Marketing Spend / New Customers)
+NOTE: Requires customer count and churn assumptions."
+
+[Tab: Sensitivity Analysis]
+// This tab uses Excel's Data Table feature to analyze the impact of key variables on outputs.
+
+// 1. ONE-VARIABLE SENSITIVITY TABLES
+// Table 1: Channel Mix vs. Profitability (Year 1)
+// Input Cell: Assumptions!B36 (Tasting Room %)
+Tasting Room %,Net Revenue,EBITDA,Ending Cash
+10%,='Cashflow & Runway'!N2,='Cashflow & Runway'!N11,='Cashflow & Runway'!M35
+15%,='Cashflow & Runway'!N2,='Cashflow & Runway'!N11,='Cashflow & Runway'!M35
+20%,='Cashflow & Runway'!N2,='Cashflow & Runway'!N11,='Cashflow & Runway'!M35
+25%,='Cashflow & Runway'!N2,='Cashflow & Runway'!N11,='Cashflow & Runway'!M35
+30%,='Cashflow & Runway'!N2,='Cashflow & Runway'!N11,='Cashflow & Runway'!M35
+// To use: Select the table area (A5:D10), go to Data > What-If Analysis > Data Table.
+// Set 'Column input cell' to Assumptions!B36. Note: Wholesale % should adjust dynamically.
+
+// Table 2: Series A Timing vs. Dilution & IRR
+// Input Cell: Assumptions!B55 (Series A Target Date)
+Series A Date (Months),SAFE Ownership %,Runway at Close,SAFE IRR (5x Exit)
+12,='Cap Table + SAFE Conversion'!C20,='Cashflow & Runway'!L39,='Dashboards'!D53
+15,='Cap Table + SAFE Conversion'!C20,='Cashflow & Runway'!O39 (extrapolated),='Dashboards'!D53
+18,='Cap Table + SAFE Conversion'!C20,='Cashflow & Runway'!R39 (extrapolated),='Dashboards'!D53
+21,='Cap Table + SAFE Conversion'!C20,='Cashflow & Runway'!U39 (extrapolated),='Dashboards'!D53
+24,='Cap Table + SAFE Conversion'!C20,='Cashflow & Runway'!X39 (extrapolated),='Dashboards'!D53
+// To use: Select the table area (A14:D19), go to Data > What-If Analysis > Data Table.
+// Set 'Column input cell' to Assumptions!B55.
+
+// 2. TWO-VARIABLE SENSITIVITY GRID
+// Output: Runway in Months at end of Year 1 (Cashflow & Runway!M39)
+// Row Input Cell: Assumptions!B41 (CapEx Overrun %)
+// Column Input Cell: Assumptions!B4 (Year 1 Production Target)
+CapEx Overrun vs. Bottle Velocity,40000,45000,50000 (Base),55000,60000
+-10.0%,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39
+-5.0%,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39
+0.0% (Base),='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39
+10.0%,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39
+20.0%,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39
+30.0%,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39,='Cashflow & Runway'!M39
+// To use: Select B23:G29. Data > What-If Analysis > Data Table.
+// Row Input: Assumptions!B41, Column Input: Assumptions!B4.
+// Use Conditional Formatting (Color Scale) on the results to visualize risk.
+
+// 3. MONTE CARLO SIMULATION (SETUP)
+// This section outlines the structure for a Monte Carlo simulation.
+// Implementation requires a VBA macro or a specialized Excel add-in.
+// The sheet would be hidden in the final version.
+
+Input Variables & Distributions:
+Variable,Distribution Type,Parameter 1 (e.g., Mean),Parameter 2 (e.g., StDev)
+Year 1 Volume,Normal,50000,5000
+Wholesale Price,Triangular,$22 (Min),$24 (Most Likely),$26 (Max)
+Raw Spirit Cost,Lognormal,$11.00,0.05
+CapEx Overrun,PERT, -5% (Min), 0% (Most Likely), 15% (Max)
+
+Simulation Trials (e.g., 1000 iterations):
+Trial #,Random Y1 Volume,Random Price,Random Spirit Cost,Random CapEx,Output: Y1 EBITDA,Output: Runway
+1,=NORM.INV(RAND(), E41, F41),=...
+2,=NORM.INV(RAND(), E41, F41),=...
+...
+1000
+
+Output Analysis:
+Metric,Value
+Mean EBITDA,=AVERAGE(G50:G1049)
+Median Runway,=MEDIAN(H50:H1049)
+Probability of Loss (EBITDA < 0),=COUNTIF(G50:G1049, "<0") / 1000
+5th Percentile Cash Position,=PERCENTILE(Cashflow!M35_sim_results, 0.05)
+
+[Tab: Diligence Pack]
+// This sheet is designed to be printed or exported to PDF as a summary for investors.
+// All data is linked from other sheets. Sheets should be protected and formulas locked.
+
+// 1. EXECUTIVE SUMMARY
+// Source: uploaded_file_The_Brogue_Distillery_American_Single_Malts_Moment_in_Context__6__pdf.txt
+Business Overview:,"The Brogue Distillery, led by renowned distiller Jake Holshue, is acquiring the assets of the former Rogue distillery to launch a new American Single Malt Whisky (ASMW) brand. The acquisition includes 1,358 barrels of aged ASMW, distillery equipment, and a fully permitted DSP location at the Port of Newport."
+Market Opportunity:,"With ASMW becoming an official TTB category in Jan 2025, America is positioned to challenge Scotland's single malt dominance. The Brogue Distillery aims to own the smoke-forward, ""Islay-style"" lane in the U.S. market, leveraging a first-to-market advantage with aged inventory that is impossible to replicate quickly."
+Financial Highlights (Year 1):,"Projected Revenue of " & TEXT('Cashflow & Runway'!N2, "$#,##0,") & " and EBITDA of " & TEXT('Cashflow & Runway'!N11, "$#,##0,") & ". The business is projected to be cash-flow breakeven in month " & 'Cashflow & Runway'!N53 & ". The downside is fully asset-backed by barrel and equipment resale value."
+Use of Funds:,"The " & TEXT('Cap Table + SAFE Conversion'!B5, "$#,##0,") & " SAFE round will be used to fund the acquisition of mature inventory at liquidation pricing (~$11/proof gal), cover initial operating expenses, and ramp up marketing and distribution for the new Brogue brand."
+Risk Mitigants:,"- **Inventory Risk:** Aged inventory acquired at fire-sale pricing, providing an immediate path to revenue.
+- **Market Risk:** ASMW category has a strong tailwind with new official designation. Jake Holshue's reputation provides significant credibility.
+- **Operational Risk:** Turnkey facility and experienced team minimize operational startup challenges.
+- **Financial Risk:** Downside is asset-backed; even a forced liquidation is projected to cover initial investment."
+
+// 2. FINANCIAL HIGHLIGHTS
+3-Year Financial Projections:
+Metric,Year 1,Year 2,Year 3
+Net Revenue,='Cashflow & Runway'!B42,='Cashflow & Runway'!C42,='Cashflow & Runway'!D42
+COGS,='Cashflow & Runway'!B43,='Cashflow & Runway'!C43,='Cashflow & Runway'!D43
+Gross Profit,='Cashflow & Runway'!B44,='Cashflow & Runway'!C44,='Cashflow & Runway'!D44
+Gross Margin %,='Cashflow & Runway'!B45,='Cashflow & Runway'!C45,='Cashflow & Runway'!D45
+EBITDA,='Cashflow & Runway'!B48,='Cashflow & Runway'!C48,='Cashflow & Runway'!D48
+EBITDA Margin %,='Cashflow & Runway'!B49,='Cashflow & Runway'!C49,='Cashflow & Runway'!D49
+Net Income,='Cashflow & Runway'!B50,='Cashflow & Runway'!C50,='Cashflow & Runway'!D50
+Free Cash Flow,='Cashflow & Runway'!B51,='Cashflow & Runway'!C51,='Cashflow & Runway'!D51
+Ending Cash Position,='Cashflow & Runway'!B52,='Cashflow & Runway'!C52,='Cashflow & Runway'!D52
+
+Funding & Valuation:
+Round,Amount,Pre-Money Valuation,Post-Money Valuation
+SAFE Round,='Cap Table + SAFE Conversion'!B5,='Cap Table + SAFE Conversion'!B6,='Cap Table + SAFE Conversion'!D39
+Series A (Projected),='Cap Table + SAFE Conversion'!B25,='Cap Table + SAFE Conversion'!B24,='Cap Table + SAFE Conversion'!D41
+
+// 3. APPENDIX
+Detailed Assumptions:,"All assumptions are detailed in the 'Assumptions' tab. Key drivers include a Year 1 target of " & 'Assumptions'!B4 & " bottles, an average wholesale price of " & TEXT('Assumptions'!B15, "$0.00") & ", and a raw spirit cost of " & TEXT('Assumptions'!B21, "$0.00") & " per proof gallon."
+Regulatory Roadmap:,"The Brogue Distillery will operate under its existing DSP location at the Port of Newport. All necessary TTB and OLCC filings are in place. The recent TTB ruling on ASMW (Jan 19, 2025) provides a clear regulatory framework for our core product category."
+Management Team:,"Led by Jake Holshue, a two-time elected chair of the American Craft Spirits Association (ACSA) and a key lobbyist for the official ASMW category designation. Jake personally distilled the 1,358 barrels of whisky being acquired, ensuring unparalleled product knowledge and quality control."
+Exit Strategy:,"The company will be positioned for a strategic acquisition by a major spirits portfolio (e.g., Diageo, Pernod Ricard, Beam Suntory) seeking a credible, high-growth entry into the premium American Single Malt category. The target exit timeline is 3-5 years post-Series A funding."
+
+// NOTE ON MODEL BEST PRACTICES
+// Named Ranges: All key inputs on the 'Assumptions' tab should be converted to Named Ranges (e.g., 'Volume_Y1', 'Capex_Overrun_Pct') for formula clarity.
+// Protection: All sheets should be protected, with only the blue input cells on the 'Assumptions' and 'Scenario Switcher' tabs left unlocked. This prevents accidental formula deletion.
+// Conditional Formatting: Use on the P&L and Cash Flow statements to highlight negative numbers (red text) and on the 'Dashboards' to create visual alerts (e.g., runway gauge colors).
+// Version Control: The filename should include a version number (e.g., v1.0). A 'Changelog' tab can be added to track modifications.
