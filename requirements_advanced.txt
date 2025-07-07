@@ -1,0 +1,25 @@
+# requirements_advanced.txt
+# Dependencies for the advanced, modular Brogue Distillery Financial Model
+
+# --- Core Calculation & Data Handling ---
+# For data manipulation and core financial logic
+pandas==2.2.2
+numpy==1.26.4
+numpy-financial==1.0.0
+
+# --- Configuration File Parsing ---
+# To read the human-readable assumptions.yaml file
+PyYAML==6.0.1
+
+# --- Excel Report Generation ---
+# For creating professionally formatted .xlsx files with charts
+XlsxWriter==3.2.0
+
+# --- PDF Report Generation (for future implementation) ---
+# For creating board-ready PDF summaries
+reportlab==4.2.0
+
+# --- Interactive Web Dashboard (for future implementation) ---
+# For building the live, interactive web-based dashboard
+plotly==5.22.0
+dash==2.17.1
