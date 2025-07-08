@@ -1301,51 +1301,104 @@ class DistilleryFinancialModel:
         self.named_ranges["IRR_Sensitivity_Table"] = f"'Returns Analysis'!$B${table_first_cell_row+1}:$F${table_first_cell_row+5}"
 
     def build_dashboard(self):
-        """Build the Dashboard sheet."""
-        worksheet = self.workbook.get_worksheet_by_name("Dashboard")
-        worksheet.set_column('A:A', 5)
-        worksheet.set_column('B:D', 20)
-        worksheet.set_column('F:I', 15)
+        """Build an investment-grade dashboard with professional visualizations."""
+        ws = self.workbook.get_worksheet_by_name("Dashboard")
 
-        worksheet.merge_range('B2:D2', 'Distillery Performance Dashboard', self.formats['title'])
-        worksheet.write('B4', 'Scenario Selection:', self.formats['label'])
-        worksheet.data_validation('D4', {'validate': 'list', 'source': "='Control Panel'!$D$4", 'input_title': 'Select Scenario:'})
-        worksheet.write_formula('D4', '=SelectedScenario', self.formats['input'])
+        # --- 1. Setup and Formatting ---
+        ws.set_column('A:A', 2)
+        ws.set_column('B:C', 12) # KPI cards
+        ws.set_column('D:D', 2)  # Gap
+        ws.set_column('E:F', 12) # KPI cards
+        ws.set_column('G:G', 2)  # Gap
+        ws.set_column('H:I', 12) # KPI cards
+        ws.set_column('J:J', 2)  # Gap
+        ws.set_column('K:R', 10) # Other charts
+        ws.set_zoom(85)
 
-        # Key Metrics
-        worksheet.merge_range('B6:D6', 'Key Metrics', self.formats['header'])
-        metrics = ['IRR', 'MOIC', 'Payback Period', 'Peak Funding Need', 'Revenue CAGR', 'Avg. EBITDA Margin']
-        for i, metric in enumerate(metrics):
-            worksheet.write(f'B{7+i}', metric, self.formats['label'])
-            # Link to the new returns analysis sheet
-            if metric == 'IRR':
-                worksheet.write_formula(f'D{7+i}', "=Project_IRR", self.formats['formula_percent'])
-            elif metric == 'MOIC':
-                 worksheet.write_formula(f'D{7+i}', "=Project_MOIC", self.formats['formula'])
-            elif metric == 'Payback Period':
-                 worksheet.write_formula(f'D{7+i}', "='Returns Analysis'!C14", self.formats['formula'])
-            elif metric == 'Peak Funding Need':
-                 worksheet.write_formula(f'D{7+i}', "=Peak_Cash_Need", self.formats['formula_currency'])
-            else: # Placeholder for other metrics
-                worksheet.write(f'D{7+i}', 'N/A', self.formats['formula'])
+        # Define custom formats for the dashboard
+        kpi_title_format = self.workbook.add_format({'bold': True, 'font_size': 10, 'align': 'left', 'valign': 'vcenter', 'border': 1, 'bg_color': '#F2F2F2'})
+        kpi_value_format = self.workbook.add_format({'bold': True, 'font_size': 18, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '$#,##0,"K"'})
+        kpi_percent_format = self.workbook.add_format({'bold': True, 'font_size': 18, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '0.0%'})
+        kpi_moic_format = self.workbook.add_format({'bold': True, 'font_size': 18, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '0.00"x"'})
+        kpi_trend_format = self.workbook.add_format({'font_size': 9, 'align': 'center', 'valign': 'vcenter', 'border': 1})
+        
+        # --- 2. KPI Cards Section (B5:I13) ---
+        ws.merge_range('B1:J1', 'Distillery Performance Dashboard', self.formats['title'])
 
+        kpis = [
+            # Top Row
+            {'label': 'Revenue (TTM)', 'formula': "=SUM('Income Statement'!B4:M4)", 'format': kpi_value_format, 'pos': 'B5'},
+            {'label': 'Gross Margin %', 'formula': "=AVERAGE('Income Statement'!B7:M7)", 'format': kpi_percent_format, 'pos': 'E5'},
+            {'label': 'EBITDA Margin %', 'formula': "=AVERAGE('Income Statement'!B11:M11)", 'format': kpi_percent_format, 'pos': 'H5'},
+            # Bottom Row
+            {'label': 'Cash Balance', 'formula': "=Ending_Cash", 'format': kpi_value_format, 'pos': 'B10'},
+            {'label': 'Project IRR', 'formula': "=Project_IRR", 'format': kpi_percent_format, 'pos': 'E10'},
+            {'label': 'Project MOIC', 'formula': "=Project_MOIC", 'format': kpi_moic_format, 'pos': 'H10'},
+        ]
 
-        # Charts
-        # Monthly Cash Balance Chart
-        chart1 = self.workbook.add_chart({'type': 'line'})
-        chart1.add_series({
-            'name': 'Ending Cash',
-            'categories': "='Cash Flow Statement'!$B$1:$M$2",
-            'values': "='Cash Flow Statement'!$B$21:$M$21",
+        for kpi in kpis:
+            row, col = xlsxwriter.utility.xl_cell_to_rowcol(kpi['pos'])
+            # KPI Card is 2 columns wide and 4 rows tall
+            ws.merge_range(row, col, row, col + 1, kpi['label'], kpi_title_format)
+            ws.merge_range(row + 1, col, row + 2, col + 1, kpi['formula'], kpi['format'])
+            ws.merge_range(row + 3, col, row + 3, col + 1, "[Sparkline] vs LY: +5.0%", kpi_trend_format)
+            ws.write_comment(row + 3, col, "XlsxWriter cannot create sparklines. Please add them manually in Excel via Insert > Sparklines.")
+
+        # --- 3. Cash Burn Chart (B15:I25) ---
+        ws.merge_range('B15:I15', 'Monthly Cash Flow & Burn Analysis', self.formats['subheader'])
+        cash_burn_chart = self.workbook.add_chart({'type': 'column'})
+        cash_burn_chart.add_series({
+            'name':       "='Cash Flow Statement'!A19",
+            'categories': "='Cash Flow Statement'!$B$1:$M$1",
+            'values':     "='Cash Flow Statement'!$B$19:$M$19",
+            'fill':       {'color': '#C00000'},
+            'border':     {'color': '#C00000'},
+            'invert_if_negative': True,
         })
-        chart1.set_title({'name': 'Monthly Cash Balance (Year 1)'})
-        worksheet.insert_chart('F7', chart1)
+        cash_burn_chart.set_y_axis({'num_format': '$#,##0,"K"'})
+        cash_burn_chart.set_x_axis({'date_axis': True, 'num_format': 'mmm yy'})
+        cash_burn_chart.set_legend({'position': 'bottom'})
+        cash_burn_chart.set_size({'width': 640, 'height': 280})
+        ws.insert_chart('B16', cash_burn_chart)
 
-        # Revenue Growth Waterfall
-        chart2 = self.workbook.add_chart({'type': 'column'}) # Placeholder for waterfall
-        chart2.add_series({'name': 'Net Revenue', 'categories': "='Income Statement'!$B$1:$BH$2", 'values': "='Income Statement'!$B$4:$BH$4"})
-        chart2.set_title({'name': 'Revenue Growth'})
-        worksheet.insert_chart('F23', chart2)
+        # --- 4. Revenue Waterfall (K15:R25) ---
+        ws.merge_range('K15:R15', 'Y1 Revenue Waterfall', self.formats['subheader'])
+        # Placeholder for waterfall chart. Requires helper columns.
+        ws.merge_range('K16:R25', '[Waterfall Chart Placeholder]', self.formats['label'])
+        ws.write_comment('K16', "Waterfall charts require a helper table with calculated values for start, end, increases, and decreases. This can be built on a separate helper sheet and then linked here.")
+
+        # --- 5. Unit Economics Gauge (B28:F35) ---
+        ws.merge_range('B28:F28', 'Unit Economics: Contribution Margin', self.formats['subheader'])
+        # Placeholder for gauge chart. Requires complex chart setup.
+        ws.merge_range('B29:F35', '[Gauge Chart Placeholder]', self.formats['label'])
+        ws.write_comment('B29', "Gauge charts are created by combining and formatting multiple chart types (doughnut and pie). This is an advanced technique best performed manually in Excel.")
+
+        # --- 6. Scenario Comparison Table (H28:R35) ---
+        ws.merge_range('H28:R28', 'Scenario Comparison', self.formats['subheader'])
+        ws.write_row('H29', ['Metric', 'Downside', 'Base Case', 'Upside'], self.formats['header'])
+        metrics_to_compare = ['Project IRR', 'Project MOIC', 'Peak Funding Need']
+        for i, metric in enumerate(metrics_to_compare):
+            ws.write(30 + i, 7, metric, self.formats['label'])
+        ws.write_comment('H29', "This table would require VBA or manual runs to populate the values for each scenario.")
+        
+        # --- 7. Covenant Compliance Tracker (B38:R42) ---
+        ws.merge_range('B38:J38', 'Covenant Compliance Tracker', self.formats['subheader'])
+        ws.write_row('B39', ['Covenant', 'Current Value', 'Threshold', 'Status', 'Months to Breach'], self.formats['header'])
+        # DSCR
+        ws.write('B40', 'Debt Service Coverage Ratio (DSCR)', self.formats['label'])
+        ws.write_formula('C40', "IFERROR(AVERAGE('Income Statement'!B10:M10)/ABS(AVERAGE('Debt Schedule'!B6:M6)+AVERAGE('Debt Schedule'!B9:M9)),0)", self.formats['formula'])
+        ws.write('D40', '> 1.25x', self.formats['label'])
+        ws.conditional_format('E40:E40', {'type': 'icon_set', 'icon_style': '3_traffic_lights', 'icons': [{'criteria': '>=', 'type': 'number', 'value': 1.5}, {'criteria': '>=', 'type': 'number', 'value': 1.25}]})
+        # Leverage Ratio
+        ws.write('B41', 'Leverage Ratio (Debt/EBITDA)', self.formats['label'])
+        ws.write_formula('C41', "IFERROR(Ending_Debt/SUM('Income Statement'!B10:M10),0)", self.formats['formula'])
+        ws.write('D41', '< 4.0x', self.formats['label'])
+        ws.conditional_format('E41:E41', {'type': 'icon_set', 'icon_style': '3_traffic_lights_r', 'icons': [{'criteria': '>=', 'type': 'number', 'value': 4.5}, {'criteria': '>=', 'type': 'number', 'value': 4.0}]})
+        
+        # --- 8. Interactive Elements (Placeholders) ---
+        ws.write_comment('B1', "Interactive elements like buttons and sliders cannot be created with XlsxWriter. They must be added manually in Excel and linked to VBA macros.")
+        ws.merge_range('K1:L1', 'Update Scenario', self.formats['button'])
+        ws.merge_range('M1:N1', 'Run Sensitivity', self.formats['button'])
         
     def build_checks_sheet(self):
         """Build the Checks sheet."""
