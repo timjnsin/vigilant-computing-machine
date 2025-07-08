@@ -147,7 +147,7 @@ class DistilleryFinancialModel:
             "Cover", "Control Panel", "Assumptions", "Revenue Build", "COGS Build", 
             "OpEx Build", "Headcount", "CapEx Schedule", "Debt Schedule", "Working Capital",
             "Income Statement", "Cash Flow Statement", "Balance Sheet", "Cap Table", 
-            "Returns Analysis", "Dashboard", "Checks"
+            "Data Import", "Returns Analysis", "Dashboard", "Checks"
         ]
         
         # Sheets that need timeline headers
@@ -264,6 +264,7 @@ class DistilleryFinancialModel:
         self.build_cover_sheet()
         self.build_control_panel()
         self.build_assumptions_sheet()
+        self.build_data_import_sheet()
         self.build_revenue_sheet()
         self.build_cogs_sheet()
         self.build_opex_sheet()
@@ -276,6 +277,9 @@ class DistilleryFinancialModel:
         self.build_balance_sheet()
         self.build_cap_table()
         self.build_returns_analysis()
+        # --- Sensitivity analysis (two-way data tables, tornado, breakeven, etc.) ---
+        # Implemented in build_sensitivity_tables()
+        self.build_sensitivity_tables()
         self.build_dashboard()
         self.build_checks_sheet()
         
@@ -347,8 +351,8 @@ class DistilleryFinancialModel:
         
         # Set column widths
         worksheet.set_column('A:A', 5)
-        worksheet.set_column('B:C', 20)
-        worksheet.set_column('D:E', 15)
+        worksheet.set_column('B:C', 25)
+        worksheet.set_column('D:E', 18)
         
         # Add title
         worksheet.merge_range('B2:D2', 'Distillery Financial Model', self.formats['title'])
@@ -364,20 +368,34 @@ class DistilleryFinancialModel:
         worksheet.write_datetime('D6', self.model_start_date, self.formats['input'])
         self.named_ranges["ModelStartDate"] = "'Control Panel'!$D$6"
         
-        worksheet.write('B7', 'Actuals Through:', self.formats['label'])
+        worksheet.write('B7', 'Actuals Cutoff Date:', self.formats['label'])
         worksheet.write_datetime('D7', self.actuals_cutoff, self.formats['input'])
         self.named_ranges["ActualsCutoff"] = "'Control Panel'!$D$7"
         
+        worksheet.write('B8', 'Data Source Mode:', self.formats['label'])
+        worksheet.write('D8', 'Forecast Only', self.formats['input'])
+        worksheet.data_validation('D8', {'validate': 'list', 'source': ['Forecast Only', 'Actuals + Forecast', 'Actuals Only']})
+        self.named_ranges["DataSourceMode"] = "'Control Panel'!$D$8"
+        
+        # Add comment about IFERROR pattern usage
+        comment = (
+            "The 'Actuals Cutoff Date' and 'Data Source Mode' control how the model integrates actual data from the 'Data Import' sheet. "
+            "Financial statement formulas will use a pattern like: "
+            "IF(current_date > ActualsCutoff, forecast_formula, IFERROR(VLOOKUP(current_date, Actuals_Table, ...), forecast_formula)). "
+            "This allows the model to automatically use actual data when available for a given period and fall back to the forecast if not."
+        )
+        worksheet.write_comment('B8', comment, {'author': 'Model Bot', 'visible': False, 'width': 400, 'height': 120})
+
         # Key global assumptions
-        worksheet.merge_range('B9:D9', 'Key Global Assumptions', self.formats['subheader'])
+        worksheet.merge_range('B10:D10', 'Key Global Assumptions', self.formats['subheader'])
         
-        worksheet.write('B10', 'Tax Rate:', self.formats['label'])
-        worksheet.write('D10', self.tax_rate, self.formats['input_percent'])
-        self.named_ranges["TaxRate"] = "'Control Panel'!$D$10"
+        worksheet.write('B11', 'Tax Rate:', self.formats['label'])
+        worksheet.write('D11', self.tax_rate, self.formats['input_percent'])
+        self.named_ranges["TaxRate"] = "'Control Panel'!$D$11"
         
-        worksheet.write('B11', 'Discount Rate:', self.formats['label'])
-        worksheet.write('D11', self.discount_rate, self.formats['input_percent'])
-        self.named_ranges["DiscountRate"] = "'Control Panel'!$D$11"
+        worksheet.write('B12', 'Discount Rate:', self.formats['label'])
+        worksheet.write('D12', self.discount_rate, self.formats['input_percent'])
+        self.named_ranges["DiscountRate"] = "'Control Panel'!$D$12"
         
         # Protect the sheet except for input cells
         worksheet.protect(options={'select_unlocked_cells': True, 'select_locked_cells': True})
@@ -964,25 +982,323 @@ class DistilleryFinancialModel:
         worksheet.write_formula('E6', '=E5', self.formats['total'])
 
     def build_returns_analysis(self):
-        """Build the Returns Analysis sheet."""
+        """Build the Returns Analysis sheet with proper IRR/MOIC calculations."""
         worksheet = self.workbook.get_worksheet_by_name("Returns Analysis")
-        worksheet.set_column('A:B', 25)
-        worksheet.set_column('C:E', 15)
+        worksheet.set_column('A:A', 25)
+        worksheet.set_column('B:G', 15)
 
-        worksheet.merge_range('B2:D2', 'Returns Analysis', self.formats['title'])
-        worksheet.write('B4', 'Unlevered Free Cash Flow', self.formats['subheader'])
-        worksheet.write('B5', 'Levered Free Cash Flow', self.formats['subheader'])
+        worksheet.write('A3', 'Free Cash Flow & Returns Analysis', self.formats['title'])
         
-        # Placeholder for annual cash flow calculations
-        worksheet.write('B7', 'Year', self.formats['header'])
-        for i in range(5):
-            worksheet.write(6, 2+i, i, self.formats['header'])
-        worksheet.write('B8', 'FCF', self.formats['label'])
+        # Headers for annual periods
+        worksheet.write('A5', 'Year', self.formats['header'])
+        worksheet.write('A6', 'Unlevered FCF', self.formats['label'])
+        worksheet.write('A7', 'Levered FCF', self.formats['label'])
+        worksheet.write('A8', 'Cumulative FCF', self.formats['label'])
+        worksheet.write('A9', 'Investor Cash Flows', self.formats['label'])
+        
+        # Define annual column ranges
+        year_ranges = [
+            ('B:M', 12),  # Year 1
+            ('N:Y', 12),  # Year 2
+            ('Z:AK', 12), # Year 3
+            ('AL:AS', 8), # Year 4 & 5 (Quarters) - Assuming 4 quarters per year
+            ('AT:AU', 2) # Year 6 & 7 (Annual)
+        ]
+        
+        # Years 0-5
+        for year in range(6): # 0 to 5
+            col_letter = xlsxwriter.utility.xl_col_to_name(year + 1) # B to G
+            worksheet.write(f'{col_letter}5', year, self.formats['header'])
+            
+            if year == 0:
+                # Initial investment
+                worksheet.write_formula(f'{col_letter}6', '=0', self.formats['formula_currency'])
+                worksheet.write_formula(f'{col_letter}7', '=0', self.formats['formula_currency'])
+                worksheet.write_formula(f'{col_letter}9', '=-Initial_Equity', self.formats['formula_currency'])
+            else:
+                # Determine column range for the year
+                if year <= 3: # Monthly data for years 1-3
+                    start_col_idx = (year - 1) * 12 + 1
+                    end_col_idx = year * 12
+                elif year <= 5: # Quarterly data for years 4-5
+                    start_col_idx = 36 + (year - 4) * 4 + 1
+                    end_col_idx = 36 + (year - 3) * 4
+                
+                start_col = xlsxwriter.utility.xl_col_to_name(start_col_idx)
+                end_col = xlsxwriter.utility.xl_col_to_name(end_col_idx)
 
-        worksheet.write('B10', 'IRR', self.formats['label'])
-        worksheet.write_formula('C10', '=IRR(C8:G8)', self.formats['formula_percent'])
-        worksheet.write('B11', 'MOIC', self.formats['label'])
-        worksheet.write_formula('C11', '=SUMIF(C8:G8,">0")/ABS(SUMIF(C8:G8,"<0"))', self.formats['formula'])
+                # Unlevered FCF = EBITDA + Taxes(already negative) - CapEx - Change in NWC
+                ebitda = f"SUM('Income Statement'!{start_col}10:{end_col}10)"
+                taxes = f"SUM('Income Statement'!{start_col}19:{end_col}19)"
+                capex = f"SUM('CapEx Schedule'!{start_col}9:{end_col}9)"
+                nwc_change = f"SUM('Working Capital'!{start_col}9:{end_col}9)"
+                worksheet.write_formula(f'{col_letter}6', f"={ebitda}+{taxes}-{capex}-{nwc_change}", self.formats['formula_currency'])
+                
+                # Levered FCF = UFCF + Interest(negative) + Debt Repayment(negative) + Debt Issuance
+                interest = f"SUM('Debt Schedule'!{start_col}9:{end_col}9)"
+                repayment = f"SUM('Debt Schedule'!{start_col}6:{end_col}6)"
+                issuance = f"SUM('Debt Schedule'!{start_col}5:{end_col}5)"
+                worksheet.write_formula(f'{col_letter}7', f"={col_letter}6+{interest}+{repayment}+{issuance}", self.formats['formula_currency'])
+                
+                # Investor cash flows (for IRR calc)
+                worksheet.write_formula(f'{col_letter}9', f'={col_letter}7', self.formats['formula_currency'])
+            
+            # Cumulative FCF
+            if year == 0:
+                worksheet.write_formula('B8', '=B9', self.formats['formula_currency'])
+            else:
+                prev_col = xlsxwriter.utility.xl_col_to_name(year)
+                worksheet.write_formula(f'{col_letter}8', f'={prev_col}8+{col_letter}9', self.formats['formula_currency'])
+        
+        # Add terminal value in year 5 (Column G)
+        y5_ebitda = "SUM('Income Statement'!AP10:AS10)" # EBITDA for last 4 quarters
+        worksheet.write_formula('G9', f'=G7+({y5_ebitda}*10)', self.formats['formula_currency'])
+        
+        # Key metrics section
+        worksheet.write('A11', 'Key Return Metrics', self.formats['subheader'])
+        worksheet.write('A12', 'IRR', self.formats['label'])
+        worksheet.write('A13', 'MOIC', self.formats['label'])
+        worksheet.write('A14', 'Payback Period (Years)', self.formats['label'])
+        worksheet.write('A15', 'Peak Funding Need', self.formats['label'])
+        
+        # IRR calculation
+        worksheet.write_formula('C12', '=IRR(B9:G9)', self.formats['formula_percent'])
+        self.named_ranges["Project_IRR"] = "'Returns Analysis'!$C$12"
+        
+        # MOIC calculation
+        worksheet.write_formula('C13', '=SUMIF(B9:G9,">0")/ABS(SUMIF(B9:G9,"<0"))', self.formats['formula'])
+        self.named_ranges["Project_MOIC"] = "'Returns Analysis'!$C$13"
+        
+        # Payback period calculation
+        payback_formula = '=IFERROR(MATCH(TRUE,B8:G8>0,0)-2 + (0-INDEX(B8:G8,MATCH(TRUE,B8:G8>0,0)-1))/INDEX(B9:G9,MATCH(TRUE,B8:G8>0,0)), "Never")'
+        worksheet.write_formula('C14', payback_formula, self.formats['formula'])
+        
+        # Peak cash need
+        worksheet.write_formula('C15', '=MIN(B8:G8)', self.formats['formula_currency'])
+        self.named_ranges["Peak_Cash_Need"] = "'Returns Analysis'!$C$15"
+
+
+    # ------------------------------------------------------------------ #
+    #  Data Import / Power-Query Framework                               #
+    # ------------------------------------------------------------------ #
+    def build_data_import_sheet(self):
+        """
+        Build the **Data Import** sheet which acts as a landing zone for Power
+        Query connections and variance analysis.
+
+        Only metadata tables, headers and data-validation scaffolding are
+        created here – the actual Power Query (M) connections are documented
+        as comments for user implementation in Excel.
+        """
+        ws = self.workbook.get_worksheet_by_name("Data Import")
+        ws.set_column('A:A', 3)
+        ws.set_column('B:B', 22)
+        ws.set_column('C:E', 18)
+        ws.set_column('G:M', 14)
+
+        # -------------------- 1.  Connection Metadata ------------------- #
+        ws.merge_range('B2:E2', 'Connection Metadata', self.formats['subheader'])
+        meta_headers = ['Source Name', 'Connection Type', 'Refresh Frequency', 'Last Refresh']
+        ws.write_row('B3', meta_headers, self.formats['header'])
+
+        meta_rows = [
+            ('QuickBooks_Actuals', 'CSV',  'On Open', ''),
+            ('Bank_Statements',    'API',  'Daily',   ''),
+            ('POS_System',         'DB',   'Manual',  '')
+        ]
+        for i, row in enumerate(meta_rows):
+            ws.write_row(3 + i, 1, row, self.formats['label'])
+            # last-refresh timestamp cell ready for PQ to update
+            ws.write_blank(3 + i, 4, None, self.formats['date'])
+
+        # ----------------- 2.  Actuals Data Landing Zone --------------- #
+        data_start_row = 10
+        ws.merge_range(data_start_row - 1, 1, data_start_row - 1, 6,
+                       'Actuals – Raw Data (Power Query output area)',
+                       self.formats['subheader'])
+
+        data_headers = ['Date', 'Revenue', 'COGS', 'OpEx', 'Units Sold', 'Cash Balance']
+        ws.write_row(data_start_row, 1, data_headers, self.formats['header'])
+
+        # Provide ~120 blank rows for data loads
+        for r in range(1, 121):
+            excel_row = data_start_row + r
+            ws.write_blank(excel_row, 1, None, self.formats['date'])         # Date
+            for c in range(2, 7):
+                ws.write_blank(excel_row, c, None, self.formats['number'])   # numeric cols
+
+        # Data-validation for integrity
+        ws.data_validation(data_start_row + 1, 1, data_start_row + 120, 1,
+                           {'validate': 'date',
+                            'criteria': 'between',
+                            'minimum': datetime.date(2000, 1, 1),
+                            'maximum': datetime.date(2100, 12, 31),
+                            'error_message': 'Date required'})
+        ws.data_validation(data_start_row + 1, 2, data_start_row + 120, 6,
+                           {'validate': 'decimal',
+                            'criteria': '>=',
+                            'value': 0,
+                            'error_message': 'Must be a non-negative number'})
+
+        # Named range for later XLOOKUP / aggregation
+        self.named_ranges['Actuals_Table'] = f"'Data Import'!$B${data_start_row+1}:$G${data_start_row+120}"
+
+        # ----------- 3.  Variance / Reconciliation Framework ----------- #
+        var_row = data_start_row + 125
+        ws.merge_range(var_row, 1, var_row, 6,
+                       'Variance Analysis (Actuals vs Forecast) – placeholders',
+                       self.formats['subheader'])
+        ws.write_row(var_row + 1, 1,
+                     ['Metric', 'Actuals', 'Forecast', 'Variance', '% Var'],
+                     self.formats['header'])
+        metrics = ['Revenue', 'COGS', 'OpEx', 'Units Sold', 'Cash Balance']
+        for i, m in enumerate(metrics):
+            r = var_row + 2 + i
+            ws.write(r, 1, m, self.formats['label'])
+            # Placeholders: formulas can be completed later
+            ws.write_formula(r, 2, '', self.formats['formula_currency'])
+            ws.write_formula(r, 3, '', self.formats['formula_currency'])
+            ws.write_formula(r, 4, '=C{0}-D{0}'.format(r+1), self.formats['formula_currency'])
+            ws.write_formula(r, 5, '=IFERROR(C{0}/D{0}-1,0)'.format(r+1), self.formats['formula_percent'])
+
+        # --------------- 4.  M-Query Documentation --------------------- #
+        doc_row = var_row + 10
+        m_query_comment = (
+            "/*\n"
+            "Sample M query for QuickBooks_Actuals connection:\n"
+            "let\n"
+            "    Source = Csv.Document(File.Contents(\"actuals.csv\"),[Delimiter=\",\", Columns=6, Encoding=1252, QuoteStyle=QuoteStyle.None]),\n"
+            "    #\"Promoted Headers\" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),\n"
+            "    #\"Changed Type\" = Table.TransformColumnTypes(#\"Promoted Headers\",\n"
+            "        {{\"Date\", type date}, {\"Revenue\", type number}, {\"COGS\", type number},\n"
+            "         {\"OpEx\", type number}, {\"Units Sold\", type number}, {\"Cash Balance\", type number}})\n"
+            "in\n"
+            "    #\"Changed Type\"\n"
+            "*/"
+        )
+        ws.write_comment(doc_row, 1, m_query_comment, {'author': 'Model Bot', 'visible': False})
+
+    # ------------------------------------------------------------------ #
+    #  Sensitivity Tables & Scenario Analysis (Two-Way, Tornado, etc.)   #
+    # ------------------------------------------------------------------ #
+    def build_sensitivity_tables(self):
+        """
+        Create two-way sensitivity tables, tornado data, discount-rate curve,
+        and break-even analysis on the Returns Analysis sheet (rows 30+).
+
+        NOTE:
+        Excel two-way data-tables aren’t natively generated by XlsxWriter.
+        We therefore lay out the correct structure, seed the centre-cell with
+        =Project_IRR and fill the table with that same formula.  A user can
+        later convert it to an actual DataTable inside Excel if desired.
+        """
+        ws = self.workbook.get_worksheet_by_name("Returns Analysis")
+
+        # ---------------- Two-way Price vs Volume table ---------------- #
+        start_row = 29  # 0-based index (row 30 in Excel)
+        ws.write(start_row, 0, "IRR Sensitivity – Price vs Volume", self.formats['subheader'])
+
+        price_vars   = [-0.20, -0.10, 0, 0.10, 0.20]   # rows
+        growth_vars  = [-0.10, -0.05, 0, 0.05, 0.10]   # columns
+
+        header_row = start_row + 2           # Excel row 32
+        header_col = 1                       # Column B
+
+        # column headers (volume growth)
+        for i, gv in enumerate(growth_vars):
+            col_letter = xlsxwriter.utility.xl_col_to_name(header_col + i)
+            ws.write(header_row, header_col + i,
+                     gv,
+                     self.workbook.add_format({'num_format': '0.0%', 'border': 1, 'align': 'center'}))
+
+        # row headers (price)
+        for i, pv in enumerate(price_vars):
+            ws.write(header_row + 1 + i, 0,
+                     pv,
+                     self.workbook.add_format({'num_format': '0%', 'border': 1, 'align': 'center'}))
+
+        # top-left (corner) cell must link to formula driver (Project_IRR)
+        table_first_cell_row = header_row + 1
+        table_first_cell_col = header_col
+        ws.write_formula(table_first_cell_row,
+                         table_first_cell_col,
+                         "=Project_IRR",
+                         self.formats['formula_percent'])
+
+        # fill the remaining 5×5 block with Project_IRR placeholders
+        for r in range(len(price_vars)):
+            for c in range(len(growth_vars)):
+                if r == 0 and c == 0:
+                    continue  # already written
+                ws.write_formula(table_first_cell_row + r,
+                                 table_first_cell_col + c,
+                                 "=Project_IRR",
+                                 self.formats['formula_percent'])
+
+        # Conditional-format heat-map
+        ws.conditional_format(table_first_cell_row,
+                              table_first_cell_col,
+                              table_first_cell_row + 4,
+                              table_first_cell_col + 4,
+                              {'type': '3_color_scale',
+                               'min_color': '#F8696B',   # red
+                               'mid_color': '#FFEB84',   # yellow
+                               'max_color': '#63BE7B'})  # green
+
+        # Tell Excel (for users) which inputs drive the table
+        ws.write(header_row - 1, 0, "Row Input: Avg_Price_per_Bottle", self.formats['label'])
+        ws.write(header_row - 1, 3, "Col Input: Annual_Growth_Rate",   self.formats['label'])
+
+        # ---------------- Tornado Chart helper data ------------------- #
+        tornado_start = header_row + 9  # leave a gap
+        ws.write(tornado_start, 0, "Tornado Chart Data", self.formats['subheader'])
+        ws.write_row(tornado_start + 1, 0,
+                     ["Variable", "Low Case", "Base Case", "High Case", "Range"],
+                     self.formats['header'])
+
+        sensitivity_vars = [
+            ("Price per Bottle", "-20%", "+0%", "+20%"),
+            ("Volume Growth", "-20%", "+0%", "+20%"),
+            ("COGS per Bottle", "+20%", "+0%", "-20%"),
+            ("OpEx", "+20%", "+0%", "-20%"),
+            ("CapEx", "+20%", "+0%", "-20%")
+        ]
+
+        for i, (label, low_tag, base_tag, high_tag) in enumerate(sensitivity_vars):
+            r = tornado_start + 2 + i
+            ws.write(r, 0, label, self.formats['label'])
+            # placeholders – user can override with scenario calc later
+            ws.write_formula(r, 1, "=Project_IRR", self.formats['formula_percent'])
+            ws.write_formula(r, 2, "=Project_IRR", self.formats['formula_percent'])
+            ws.write_formula(r, 3, "=Project_IRR", self.formats['formula_percent'])
+            ws.write_formula(r, 4, f"=ABS(C{r+1}-B{r+1})", self.formats['formula_percent'])
+
+        # --------------- Discount-Rate Sensitivity table -------------- #
+        disc_start = tornado_start + 10
+        ws.write(disc_start, 0, "IRR vs Discount Rate", self.formats['subheader'])
+        disc_rates = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
+        ws.write(disc_start + 1, 0, "Discount Rate", self.formats['header'])
+        ws.write(disc_start + 1, 1, "IRR",           self.formats['header'])
+
+        for i, dr in enumerate(disc_rates):
+            ws.write(disc_start + 2 + i, 0, dr, self.formats['percent'])
+            ws.write_formula(disc_start + 2 + i, 1,
+                             "=Project_IRR",  # placeholder
+                             self.formats['formula_percent'])
+
+        # -------------------- Break-Even Analysis --------------------- #
+        be_start = disc_start + 10
+        ws.write(be_start, 0, "Break-Even Analysis (0% IRR)", self.formats['subheader'])
+        ws.write_row(be_start + 1, 0, ["Price Change", "Units Needed"], self.formats['header'])
+
+        for i, pv in enumerate(price_vars):
+            ws.write(be_start + 2 + i, 0, pv, self.workbook.add_format({'num_format': '0%', 'border': 1}))
+            ws.write(be_start + 2 + i, 1,
+                     "",  # placeholder for goal-seek result
+                     self.formats['formula'])
+
+        # All structures created – named range for future reference
+        self.named_ranges["IRR_Sensitivity_Table"] = f"'Returns Analysis'!$B${table_first_cell_row+1}:$F${table_first_cell_row+5}"
 
     def build_dashboard(self):
         """Build the Dashboard sheet."""
@@ -1001,14 +1317,25 @@ class DistilleryFinancialModel:
         metrics = ['IRR', 'MOIC', 'Payback Period', 'Peak Funding Need', 'Revenue CAGR', 'Avg. EBITDA Margin']
         for i, metric in enumerate(metrics):
             worksheet.write(f'B{7+i}', metric, self.formats['label'])
-            worksheet.write_formula(f'D{7+i}', f"='Returns Analysis'!C{10+i}", self.formats['formula_percent' if 'IRR' in metric or 'Margin' in metric else 'formula'])
+            # Link to the new returns analysis sheet
+            if metric == 'IRR':
+                worksheet.write_formula(f'D{7+i}', "=Project_IRR", self.formats['formula_percent'])
+            elif metric == 'MOIC':
+                 worksheet.write_formula(f'D{7+i}', "=Project_MOIC", self.formats['formula'])
+            elif metric == 'Payback Period':
+                 worksheet.write_formula(f'D{7+i}', "='Returns Analysis'!C14", self.formats['formula'])
+            elif metric == 'Peak Funding Need':
+                 worksheet.write_formula(f'D{7+i}', "=Peak_Cash_Need", self.formats['formula_currency'])
+            else: # Placeholder for other metrics
+                worksheet.write(f'D{7+i}', 'N/A', self.formats['formula'])
+
 
         # Charts
         # Monthly Cash Balance Chart
         chart1 = self.workbook.add_chart({'type': 'line'})
         chart1.add_series({
             'name': 'Ending Cash',
-            'categories': "='Cash Flow Statement'!$B$2:$M$2",
+            'categories': "='Cash Flow Statement'!$B$1:$M$2",
             'values': "='Cash Flow Statement'!$B$21:$M$21",
         })
         chart1.set_title({'name': 'Monthly Cash Balance (Year 1)'})
@@ -1016,7 +1343,7 @@ class DistilleryFinancialModel:
 
         # Revenue Growth Waterfall
         chart2 = self.workbook.add_chart({'type': 'column'}) # Placeholder for waterfall
-        chart2.add_series({'name': 'Net Revenue', 'categories': "='Income Statement'!$B$2:$BH$2", 'values': "='Income Statement'!$B$4:$BH$4"})
+        chart2.add_series({'name': 'Net Revenue', 'categories': "='Income Statement'!$B$1:$BH$2", 'values': "='Income Statement'!$B$4:$BH$4"})
         chart2.set_title({'name': 'Revenue Growth'})
         worksheet.insert_chart('F23', chart2)
         
