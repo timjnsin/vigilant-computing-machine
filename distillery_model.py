@@ -147,7 +147,7 @@ class DistilleryFinancialModel:
             "Cover", "Control Panel", "Assumptions", "Revenue Build", "COGS Build", 
             "OpEx Build", "Headcount", "CapEx Schedule", "Debt Schedule", "Working Capital",
             "Income Statement", "Cash Flow Statement", "Balance Sheet", "Cap Table", 
-            "Returns Analysis", "Dashboard", "Checks"
+            "Data Import", "Returns Analysis", "Dashboard", "Checks"
         ]
         
         # Sheets that need timeline headers
@@ -264,6 +264,7 @@ class DistilleryFinancialModel:
         self.build_cover_sheet()
         self.build_control_panel()
         self.build_assumptions_sheet()
+        self.build_data_import_sheet()
         self.build_revenue_sheet()
         self.build_cogs_sheet()
         self.build_opex_sheet()
@@ -350,8 +351,8 @@ class DistilleryFinancialModel:
         
         # Set column widths
         worksheet.set_column('A:A', 5)
-        worksheet.set_column('B:C', 20)
-        worksheet.set_column('D:E', 15)
+        worksheet.set_column('B:C', 25)
+        worksheet.set_column('D:E', 18)
         
         # Add title
         worksheet.merge_range('B2:D2', 'Distillery Financial Model', self.formats['title'])
@@ -367,20 +368,34 @@ class DistilleryFinancialModel:
         worksheet.write_datetime('D6', self.model_start_date, self.formats['input'])
         self.named_ranges["ModelStartDate"] = "'Control Panel'!$D$6"
         
-        worksheet.write('B7', 'Actuals Through:', self.formats['label'])
+        worksheet.write('B7', 'Actuals Cutoff Date:', self.formats['label'])
         worksheet.write_datetime('D7', self.actuals_cutoff, self.formats['input'])
         self.named_ranges["ActualsCutoff"] = "'Control Panel'!$D$7"
         
+        worksheet.write('B8', 'Data Source Mode:', self.formats['label'])
+        worksheet.write('D8', 'Forecast Only', self.formats['input'])
+        worksheet.data_validation('D8', {'validate': 'list', 'source': ['Forecast Only', 'Actuals + Forecast', 'Actuals Only']})
+        self.named_ranges["DataSourceMode"] = "'Control Panel'!$D$8"
+        
+        # Add comment about IFERROR pattern usage
+        comment = (
+            "The 'Actuals Cutoff Date' and 'Data Source Mode' control how the model integrates actual data from the 'Data Import' sheet. "
+            "Financial statement formulas will use a pattern like: "
+            "IF(current_date > ActualsCutoff, forecast_formula, IFERROR(VLOOKUP(current_date, Actuals_Table, ...), forecast_formula)). "
+            "This allows the model to automatically use actual data when available for a given period and fall back to the forecast if not."
+        )
+        worksheet.write_comment('B8', comment, {'author': 'Model Bot', 'visible': False, 'width': 400, 'height': 120})
+
         # Key global assumptions
-        worksheet.merge_range('B9:D9', 'Key Global Assumptions', self.formats['subheader'])
+        worksheet.merge_range('B10:D10', 'Key Global Assumptions', self.formats['subheader'])
         
-        worksheet.write('B10', 'Tax Rate:', self.formats['label'])
-        worksheet.write('D10', self.tax_rate, self.formats['input_percent'])
-        self.named_ranges["TaxRate"] = "'Control Panel'!$D$10"
+        worksheet.write('B11', 'Tax Rate:', self.formats['label'])
+        worksheet.write('D11', self.tax_rate, self.formats['input_percent'])
+        self.named_ranges["TaxRate"] = "'Control Panel'!$D$11"
         
-        worksheet.write('B11', 'Discount Rate:', self.formats['label'])
-        worksheet.write('D11', self.discount_rate, self.formats['input_percent'])
-        self.named_ranges["DiscountRate"] = "'Control Panel'!$D$11"
+        worksheet.write('B12', 'Discount Rate:', self.formats['label'])
+        worksheet.write('D12', self.discount_rate, self.formats['input_percent'])
+        self.named_ranges["DiscountRate"] = "'Control Panel'!$D$12"
         
         # Protect the sheet except for input cells
         worksheet.protect(options={'select_unlocked_cells': True, 'select_locked_cells': True})
@@ -1062,6 +1077,106 @@ class DistilleryFinancialModel:
         worksheet.write_formula('C15', '=MIN(B8:G8)', self.formats['formula_currency'])
         self.named_ranges["Peak_Cash_Need"] = "'Returns Analysis'!$C$15"
 
+
+    # ------------------------------------------------------------------ #
+    #  Data Import / Power-Query Framework                               #
+    # ------------------------------------------------------------------ #
+    def build_data_import_sheet(self):
+        """
+        Build the **Data Import** sheet which acts as a landing zone for Power
+        Query connections and variance analysis.
+
+        Only metadata tables, headers and data-validation scaffolding are
+        created here – the actual Power Query (M) connections are documented
+        as comments for user implementation in Excel.
+        """
+        ws = self.workbook.get_worksheet_by_name("Data Import")
+        ws.set_column('A:A', 3)
+        ws.set_column('B:B', 22)
+        ws.set_column('C:E', 18)
+        ws.set_column('G:M', 14)
+
+        # -------------------- 1.  Connection Metadata ------------------- #
+        ws.merge_range('B2:E2', 'Connection Metadata', self.formats['subheader'])
+        meta_headers = ['Source Name', 'Connection Type', 'Refresh Frequency', 'Last Refresh']
+        ws.write_row('B3', meta_headers, self.formats['header'])
+
+        meta_rows = [
+            ('QuickBooks_Actuals', 'CSV',  'On Open', ''),
+            ('Bank_Statements',    'API',  'Daily',   ''),
+            ('POS_System',         'DB',   'Manual',  '')
+        ]
+        for i, row in enumerate(meta_rows):
+            ws.write_row(3 + i, 1, row, self.formats['label'])
+            # last-refresh timestamp cell ready for PQ to update
+            ws.write_blank(3 + i, 4, None, self.formats['date'])
+
+        # ----------------- 2.  Actuals Data Landing Zone --------------- #
+        data_start_row = 10
+        ws.merge_range(data_start_row - 1, 1, data_start_row - 1, 6,
+                       'Actuals – Raw Data (Power Query output area)',
+                       self.formats['subheader'])
+
+        data_headers = ['Date', 'Revenue', 'COGS', 'OpEx', 'Units Sold', 'Cash Balance']
+        ws.write_row(data_start_row, 1, data_headers, self.formats['header'])
+
+        # Provide ~120 blank rows for data loads
+        for r in range(1, 121):
+            excel_row = data_start_row + r
+            ws.write_blank(excel_row, 1, None, self.formats['date'])         # Date
+            for c in range(2, 7):
+                ws.write_blank(excel_row, c, None, self.formats['number'])   # numeric cols
+
+        # Data-validation for integrity
+        ws.data_validation(data_start_row + 1, 1, data_start_row + 120, 1,
+                           {'validate': 'date',
+                            'criteria': 'between',
+                            'minimum': datetime.date(2000, 1, 1),
+                            'maximum': datetime.date(2100, 12, 31),
+                            'error_message': 'Date required'})
+        ws.data_validation(data_start_row + 1, 2, data_start_row + 120, 6,
+                           {'validate': 'decimal',
+                            'criteria': '>=',
+                            'value': 0,
+                            'error_message': 'Must be a non-negative number'})
+
+        # Named range for later XLOOKUP / aggregation
+        self.named_ranges['Actuals_Table'] = f"'Data Import'!$B${data_start_row+1}:$G${data_start_row+120}"
+
+        # ----------- 3.  Variance / Reconciliation Framework ----------- #
+        var_row = data_start_row + 125
+        ws.merge_range(var_row, 1, var_row, 6,
+                       'Variance Analysis (Actuals vs Forecast) – placeholders',
+                       self.formats['subheader'])
+        ws.write_row(var_row + 1, 1,
+                     ['Metric', 'Actuals', 'Forecast', 'Variance', '% Var'],
+                     self.formats['header'])
+        metrics = ['Revenue', 'COGS', 'OpEx', 'Units Sold', 'Cash Balance']
+        for i, m in enumerate(metrics):
+            r = var_row + 2 + i
+            ws.write(r, 1, m, self.formats['label'])
+            # Placeholders: formulas can be completed later
+            ws.write_formula(r, 2, '', self.formats['formula_currency'])
+            ws.write_formula(r, 3, '', self.formats['formula_currency'])
+            ws.write_formula(r, 4, '=C{0}-D{0}'.format(r+1), self.formats['formula_currency'])
+            ws.write_formula(r, 5, '=IFERROR(C{0}/D{0}-1,0)'.format(r+1), self.formats['formula_percent'])
+
+        # --------------- 4.  M-Query Documentation --------------------- #
+        doc_row = var_row + 10
+        m_query_comment = (
+            "/*\n"
+            "Sample M query for QuickBooks_Actuals connection:\n"
+            "let\n"
+            "    Source = Csv.Document(File.Contents(\"actuals.csv\"),[Delimiter=\",\", Columns=6, Encoding=1252, QuoteStyle=QuoteStyle.None]),\n"
+            "    #\"Promoted Headers\" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),\n"
+            "    #\"Changed Type\" = Table.TransformColumnTypes(#\"Promoted Headers\",\n"
+            "        {{\"Date\", type date}, {\"Revenue\", type number}, {\"COGS\", type number},\n"
+            "         {\"OpEx\", type number}, {\"Units Sold\", type number}, {\"Cash Balance\", type number}})\n"
+            "in\n"
+            "    #\"Changed Type\"\n"
+            "*/"
+        )
+        ws.write_comment(doc_row, 1, m_query_comment, {'author': 'Model Bot', 'visible': False})
 
     # ------------------------------------------------------------------ #
     #  Sensitivity Tables & Scenario Analysis (Two-Way, Tornado, etc.)   #
