@@ -964,25 +964,101 @@ class DistilleryFinancialModel:
         worksheet.write_formula('E6', '=E5', self.formats['total'])
 
     def build_returns_analysis(self):
-        """Build the Returns Analysis sheet."""
+        """Build the Returns Analysis sheet with proper IRR/MOIC calculations."""
         worksheet = self.workbook.get_worksheet_by_name("Returns Analysis")
-        worksheet.set_column('A:B', 25)
-        worksheet.set_column('C:E', 15)
+        worksheet.set_column('A:A', 25)
+        worksheet.set_column('B:G', 15)
 
-        worksheet.merge_range('B2:D2', 'Returns Analysis', self.formats['title'])
-        worksheet.write('B4', 'Unlevered Free Cash Flow', self.formats['subheader'])
-        worksheet.write('B5', 'Levered Free Cash Flow', self.formats['subheader'])
+        worksheet.write('A3', 'Free Cash Flow & Returns Analysis', self.formats['title'])
         
-        # Placeholder for annual cash flow calculations
-        worksheet.write('B7', 'Year', self.formats['header'])
-        for i in range(5):
-            worksheet.write(6, 2+i, i, self.formats['header'])
-        worksheet.write('B8', 'FCF', self.formats['label'])
+        # Headers for annual periods
+        worksheet.write('A5', 'Year', self.formats['header'])
+        worksheet.write('A6', 'Unlevered FCF', self.formats['label'])
+        worksheet.write('A7', 'Levered FCF', self.formats['label'])
+        worksheet.write('A8', 'Cumulative FCF', self.formats['label'])
+        worksheet.write('A9', 'Investor Cash Flows', self.formats['label'])
+        
+        # Define annual column ranges
+        year_ranges = [
+            ('B:M', 12),  # Year 1
+            ('N:Y', 12),  # Year 2
+            ('Z:AK', 12), # Year 3
+            ('AL:AS', 8), # Year 4 & 5 (Quarters) - Assuming 4 quarters per year
+            ('AT:AU', 2) # Year 6 & 7 (Annual)
+        ]
+        
+        # Years 0-5
+        for year in range(6): # 0 to 5
+            col_letter = xlsxwriter.utility.xl_col_to_name(year + 1) # B to G
+            worksheet.write(f'{col_letter}5', year, self.formats['header'])
+            
+            if year == 0:
+                # Initial investment
+                worksheet.write_formula(f'{col_letter}6', '=0', self.formats['formula_currency'])
+                worksheet.write_formula(f'{col_letter}7', '=0', self.formats['formula_currency'])
+                worksheet.write_formula(f'{col_letter}9', '=-Initial_Equity', self.formats['formula_currency'])
+            else:
+                # Determine column range for the year
+                if year <= 3: # Monthly data for years 1-3
+                    start_col_idx = (year - 1) * 12 + 1
+                    end_col_idx = year * 12
+                elif year <= 5: # Quarterly data for years 4-5
+                    start_col_idx = 36 + (year - 4) * 4 + 1
+                    end_col_idx = 36 + (year - 3) * 4
+                
+                start_col = xlsxwriter.utility.xl_col_to_name(start_col_idx)
+                end_col = xlsxwriter.utility.xl_col_to_name(end_col_idx)
 
-        worksheet.write('B10', 'IRR', self.formats['label'])
-        worksheet.write_formula('C10', '=IRR(C8:G8)', self.formats['formula_percent'])
-        worksheet.write('B11', 'MOIC', self.formats['label'])
-        worksheet.write_formula('C11', '=SUMIF(C8:G8,">0")/ABS(SUMIF(C8:G8,"<0"))', self.formats['formula'])
+                # Unlevered FCF = EBITDA + Taxes(already negative) - CapEx - Change in NWC
+                ebitda = f"SUM('Income Statement'!{start_col}10:{end_col}10)"
+                taxes = f"SUM('Income Statement'!{start_col}19:{end_col}19)"
+                capex = f"SUM('CapEx Schedule'!{start_col}9:{end_col}9)"
+                nwc_change = f"SUM('Working Capital'!{start_col}9:{end_col}9)"
+                worksheet.write_formula(f'{col_letter}6', f"={ebitda}+{taxes}-{capex}-{nwc_change}", self.formats['formula_currency'])
+                
+                # Levered FCF = UFCF + Interest(negative) + Debt Repayment(negative) + Debt Issuance
+                interest = f"SUM('Debt Schedule'!{start_col}9:{end_col}9)"
+                repayment = f"SUM('Debt Schedule'!{start_col}6:{end_col}6)"
+                issuance = f"SUM('Debt Schedule'!{start_col}5:{end_col}5)"
+                worksheet.write_formula(f'{col_letter}7', f"={col_letter}6+{interest}+{repayment}+{issuance}", self.formats['formula_currency'])
+                
+                # Investor cash flows (for IRR calc)
+                worksheet.write_formula(f'{col_letter}9', f'={col_letter}7', self.formats['formula_currency'])
+            
+            # Cumulative FCF
+            if year == 0:
+                worksheet.write_formula('B8', '=B9', self.formats['formula_currency'])
+            else:
+                prev_col = xlsxwriter.utility.xl_col_to_name(year)
+                worksheet.write_formula(f'{col_letter}8', f'={prev_col}8+{col_letter}9', self.formats['formula_currency'])
+        
+        # Add terminal value in year 5 (Column G)
+        y5_ebitda = "SUM('Income Statement'!AP10:AS10)" # EBITDA for last 4 quarters
+        worksheet.write_formula('G9', f'=G7+({y5_ebitda}*10)', self.formats['formula_currency'])
+        
+        # Key metrics section
+        worksheet.write('A11', 'Key Return Metrics', self.formats['subheader'])
+        worksheet.write('A12', 'IRR', self.formats['label'])
+        worksheet.write('A13', 'MOIC', self.formats['label'])
+        worksheet.write('A14', 'Payback Period (Years)', self.formats['label'])
+        worksheet.write('A15', 'Peak Funding Need', self.formats['label'])
+        
+        # IRR calculation
+        worksheet.write_formula('C12', '=IRR(B9:G9)', self.formats['formula_percent'])
+        self.named_ranges["Project_IRR"] = "'Returns Analysis'!$C$12"
+        
+        # MOIC calculation
+        worksheet.write_formula('C13', '=SUMIF(B9:G9,">0")/ABS(SUMIF(B9:G9,"<0"))', self.formats['formula'])
+        self.named_ranges["Project_MOIC"] = "'Returns Analysis'!$C$13"
+        
+        # Payback period calculation
+        payback_formula = '=IFERROR(MATCH(TRUE,B8:G8>0,0)-2 + (0-INDEX(B8:G8,MATCH(TRUE,B8:G8>0,0)-1))/INDEX(B9:G9,MATCH(TRUE,B8:G8>0,0)), "Never")'
+        worksheet.write_formula('C14', payback_formula, self.formats['formula'])
+        
+        # Peak cash need
+        worksheet.write_formula('C15', '=MIN(B8:G8)', self.formats['formula_currency'])
+        self.named_ranges["Peak_Cash_Need"] = "'Returns Analysis'!$C$15"
+
 
     def build_dashboard(self):
         """Build the Dashboard sheet."""
@@ -1001,14 +1077,25 @@ class DistilleryFinancialModel:
         metrics = ['IRR', 'MOIC', 'Payback Period', 'Peak Funding Need', 'Revenue CAGR', 'Avg. EBITDA Margin']
         for i, metric in enumerate(metrics):
             worksheet.write(f'B{7+i}', metric, self.formats['label'])
-            worksheet.write_formula(f'D{7+i}', f"='Returns Analysis'!C{10+i}", self.formats['formula_percent' if 'IRR' in metric or 'Margin' in metric else 'formula'])
+            # Link to the new returns analysis sheet
+            if metric == 'IRR':
+                worksheet.write_formula(f'D{7+i}', "=Project_IRR", self.formats['formula_percent'])
+            elif metric == 'MOIC':
+                 worksheet.write_formula(f'D{7+i}', "=Project_MOIC", self.formats['formula'])
+            elif metric == 'Payback Period':
+                 worksheet.write_formula(f'D{7+i}', "='Returns Analysis'!C14", self.formats['formula'])
+            elif metric == 'Peak Funding Need':
+                 worksheet.write_formula(f'D{7+i}', "=Peak_Cash_Need", self.formats['formula_currency'])
+            else: # Placeholder for other metrics
+                worksheet.write(f'D{7+i}', 'N/A', self.formats['formula'])
+
 
         # Charts
         # Monthly Cash Balance Chart
         chart1 = self.workbook.add_chart({'type': 'line'})
         chart1.add_series({
             'name': 'Ending Cash',
-            'categories': "='Cash Flow Statement'!$B$2:$M$2",
+            'categories': "='Cash Flow Statement'!$B$1:$M$2",
             'values': "='Cash Flow Statement'!$B$21:$M$21",
         })
         chart1.set_title({'name': 'Monthly Cash Balance (Year 1)'})
@@ -1016,7 +1103,7 @@ class DistilleryFinancialModel:
 
         # Revenue Growth Waterfall
         chart2 = self.workbook.add_chart({'type': 'column'}) # Placeholder for waterfall
-        chart2.add_series({'name': 'Net Revenue', 'categories': "='Income Statement'!$B$2:$BH$2", 'values': "='Income Statement'!$B$4:$BH$4"})
+        chart2.add_series({'name': 'Net Revenue', 'categories': "='Income Statement'!$B$1:$BH$2", 'values': "='Income Statement'!$B$4:$BH$4"})
         chart2.set_title({'name': 'Revenue Growth'})
         worksheet.insert_chart('F23', chart2)
         
