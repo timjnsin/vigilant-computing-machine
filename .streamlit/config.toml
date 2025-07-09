@@ -1,0 +1,85 @@
+[theme]
+# Set dark theme as default
+base = "dark"
+
+# Custom color palette
+primaryColor = "#f59e0b"  # Gold
+backgroundColor = "#0f172a"  # Dark Blue
+secondaryBackgroundColor = "#1e293b"  # Slightly Lighter Blue
+textColor = "#f8fafc"  # Almost White
+font = "Inter"
+
+[browser]
+# Enable wider layout
+serverAddress = "localhost"
+gatherUsageStats = false
+serverPort = 8501
+
+# Performance optimizations
+serviceWorker = true  # Enable service worker for offline capability
+enableWebsocketCompression = true  # Compress websocket messages
+maxCachedMessageAge = 300  # Cache messages for 5 minutes
+
+[server]
+# Server configuration
+enableCORS = false
+enableXsrfProtection = true
+maxUploadSize = 200  # 200 MB max upload
+maxMessageSize = 200  # 200 MB max message size
+enableWebsocketCompression = true
+headless = true  # Better for production deployments
+runOnSave = true  # Auto-reload on file save
+
+# Performance settings
+enableStaticServing = true
+fileWatcherType = "auto"
+port = 8501
+baseUrlPath = ""
+enableCors = false
+enableWebsocketCompression = true
+
+[runner]
+# Execution settings
+magicEnabled = true
+installTracer = false
+fixMatplotlib = true
+postScriptGC = true
+fastReruns = true
+enforceSerializableSessionState = false  # For better performance
+
+[client]
+# Client-side behavior
+caching = true
+displayEnabled = true
+showErrorDetails = false  # Hide error details in production
+
+# Hide streamlit branding
+toolbarMode = "minimal"
+showSidebarNavigation = true
+showErrorDetails = false
+
+[global]
+# Global settings
+disableWatchdogWarning = false
+suppressDeprecationWarnings = true
+unitTest = false
+dataFrameSerialization = "arrow"
+minCachedDataSizeMB = 10
+maxCachedDataSizeMB = 1000
+sharingMode = "streamlit"
+developmentMode = false
+
+[logger]
+# Logging configuration
+level = "info"
+messageFormat = "%(asctime)s %(message)s"
+
+[deprecation]
+# Deprecation warnings
+showfileUploaderEncoding = false
+showImageFormat = false
+showPyplotGlobalUse = false
+
+[mapbox]
+# Mapbox configuration if needed
+token = ""
