@@ -144,7 +144,7 @@ class DistilleryFinancialModel:
         
         # Sheet names
         self.sheets = [
-            "Cover", "Control Panel", "Assumptions", "Revenue Build", "COGS Build", 
+            "Cover", "Control Panel", "Unit Economics", "Assumptions", "Revenue Build", "COGS Build", 
             "OpEx Build", "Headcount", "CapEx Schedule", "Debt Schedule", "Working Capital",
             "Income Statement", "Cash Flow Statement", "Balance Sheet", "Cap Table", 
             "Data Import", "Returns Analysis", "Dashboard", "Checks"
@@ -263,6 +263,8 @@ class DistilleryFinancialModel:
         # Build each sheet
         self.build_cover_sheet()
         self.build_control_panel()
+        # Build the investor-ready Unit Economics sheet (prompt #2)
+        self.build_unit_economics_sheet()
         self.build_assumptions_sheet()
         self.build_data_import_sheet()
         self.build_revenue_sheet()
@@ -1422,6 +1424,143 @@ class DistilleryFinancialModel:
             if sheet_name != "Dashboard":
                 worksheet = self.workbook.get_worksheet_by_name(sheet_name)
                 worksheet.write_url('A1', "internal:Dashboard!A1", string='Go to Dashboard', cell_format=self.formats['button'])
+
+    # ------------------------------------------------------------------ #
+    #  Unit Economics (Investor Sheet)                                   #
+    # ------------------------------------------------------------------ #
+    def build_unit_economics_sheet(self):
+        """
+        Create a screenshot-ready “Unit Economics” sheet that shows a
+        waterfall (price ➜ contribution) for each channel plus a summary
+        table.  This is purely an investor view – it does NOT drive the
+        model.
+        """
+        ws = self.workbook.get_worksheet_by_name("Unit Economics")
+
+        # -------- Formatting -------- #
+        ue_title  = self.workbook.add_format({'bold': True, 'font_size': 20,
+                                              'align': 'center'})
+        ue_hdr    = self.workbook.add_format({'bold': True, 'font_size': 16,
+                                              'bg_color': '#E2EFDA',
+                                              'border': 1, 'align': 'center'})
+        ue_lbl    = self.workbook.add_format({'font_size': 14,
+                                              'border': 1, 'align': 'left'})
+        ue_val    = self.workbook.add_format({'font_size': 14, 'border': 1,
+                                              'align': 'right',
+                                              'num_format': '$0.00'})
+        ue_pos    = self.workbook.add_format({'font_size': 14, 'border': 1,
+                                              'align': 'right',
+                                              'num_format': '$0.00',
+                                              'font_color': 'green'})
+        ue_neg    = self.workbook.add_format({'font_size': 14, 'border': 1,
+                                              'align': 'right',
+                                              'num_format': '$0.00',
+                                              'font_color': 'red'})
+
+        ws.set_column('A:A', 3)
+        ws.set_column('B:D', 18)
+        ws.set_column('E:E', 3)
+        ws.set_column('F:H', 18)
+        ws.set_column('I:I', 3)
+        ws.set_column('J:L', 18)
+        ws.set_zoom(125)
+
+        # Title
+        ws.merge_range('B2:L2', 'Unit Economics – Profit per Bottle by Channel', ue_title)
+
+        # Helper to write one channel block and return starting column index
+        def write_channel(col_offset, channel_name, price_cell, volume_pct):
+            """
+            col_offset  : 0-based offset (0 => column B)
+            price_cell  : literal price (e.g. 80)
+            volume_pct  : 0-1
+            """
+            start_col = 1 + col_offset*4
+            c = lambda idx: xlsxwriter.utility.xl_col_to_name(start_col+idx)
+
+            ws.merge_range(4, start_col, 4, start_col+2, channel_name, ue_hdr)
+
+            # Row indices
+            row_price = 5
+            labels = ['Starting Price', '- COGS', '- Alloc OpEx', 'Contribution']
+            for i, lbl in enumerate(labels):
+                r = row_price + i
+                ws.write(r, start_col, lbl, ue_lbl)
+
+            # Values
+            ws.write(row_price,     start_col+1, price_cell, ue_pos)        # price positive
+            ws.write(row_price+1,   start_col+1, -6.16,       ue_neg)        # COGS negative
+
+            # Allocated OpEx per bottle.
+            # = (Base_Salaries + Rent_per_Month*12 + Insurance_Annual) / Year_1_Bottles_Sold
+            ws.write_formula(row_price+2, start_col+1,
+                             '=-(Base_Salaries + Rent_per_Month*12 + Insurance_Annual)/Year_1_Bottles_Sold',
+                             ue_neg)
+
+            # Contribution (formula)
+            ws.write_formula(row_price+3, start_col+1,
+                             f'={c(1)}{row_price+1}+{c(1)}{row_price+2}+{c(1)}{row_price}',
+                             ue_pos)
+
+            # Store contribution cell address for summary
+            contr_addr = f'{c(1)}{row_price+3}'
+            return contr_addr, c
+
+        # --- Write three blocks --- #
+        tr_contr, tr_c = write_channel(0, 'Tasting Room', 80, 0.18)
+        club_contr, club_c = write_channel(1, 'Club', 90, 0.14)
+        wh_contr, wh_c = write_channel(2, 'Wholesale', 24, 0.68)
+
+        # --- Column charts (one per channel) -------------------------------- #
+        def add_column_chart(anchor_cell: str, start_col: int, row_start: int = 5):
+            """
+            Build a simple column chart that visually mimics a waterfall:
+            positive price bar, two negative cost bars, and resulting
+            contribution bar.
+            """
+            chart = self.workbook.add_chart({'type': 'column'})
+            chart.add_series({
+                'name':       'Unit Economics',
+                'categories': ['Unit Economics', row_start,     start_col,
+                                               row_start + 3, start_col],
+                'values':     ['Unit Economics', row_start,     start_col + 1,
+                                               row_start + 3, start_col + 1],
+                'invert_if_negative': True,
+                'data_labels': {'value': True, 'num_format': '$0'},
+            })
+            # Hide axes for cleaner “screenshot-ready” look
+            chart.set_x_axis({'visible': False})
+            chart.set_y_axis({'visible': False})
+            chart.set_size({'width': 240, 'height': 260})
+            ws.insert_chart(anchor_cell, chart)
+
+        # start_col returned from write_channel already accounts for spacing
+        add_column_chart('B10', 1)   # tasting room block starts in column B (idx 1)
+        add_column_chart('F10', 5)   # club block starts in column F  (idx 5)
+        add_column_chart('J10', 9)   # wholesale block starts in column J (idx 9)
+
+        # --- Summary Table --- #
+        summary_row = 29
+        ws.merge_range(summary_row, 1, summary_row, 3, 'Summary (Weighted Avg)', ue_hdr)
+        ws.write(summary_row+1, 1, 'Weighted Avg Price', ue_lbl)
+        ws.write(summary_row+2, 1, 'Weighted Contribution', ue_lbl)
+        ws.write(summary_row+3, 1, 'Contribution Margin %', ue_lbl)
+
+        # helper weights
+        ws.write_formula(summary_row+1, 2,
+                         f"=80*0.18+90*0.14+24*0.68",
+                         ue_val)
+        ws.write_formula(summary_row+2, 2,
+                         f"=({tr_contr})*0.18+({club_contr})*0.14+({wh_contr})*0.68",
+                         ue_val)
+        ws.write_formula(summary_row+3, 2,
+                         f"={xlsxwriter.utility.xl_col_to_name(2)}{summary_row+2}/"
+                         f"{xlsxwriter.utility.xl_col_to_name(2)}{summary_row+1}",
+                         self.workbook.add_format({'font_size': 14, 'num_format': '0.0%', 'border':1, 'align':'right'}))
+
+        # aesthetic blank columns for screenshot
+        for col in range(1, 12):
+            ws.set_row(4, 24)  # enlarge header row
 
 if __name__ == '__main__':
     model = DistilleryFinancialModel()
