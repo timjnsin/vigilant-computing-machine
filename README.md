@@ -48,6 +48,24 @@ To generate the financial model workbook, follow these steps:
 2.  **Locate the output file:**
     A new Excel file named `distillery_financial_model_v1.xlsx` will be created in the project's root directory.
 
+### Running the Streamlit Web App
+
+In addition to the Excel generator, the repository now ships with a premium investor-presentation web interface built with Streamlit.  
+Launch it from the project root with:
+
+```bash
+streamlit run streamlit_app/app.py
+```
+
+Streamlit will start a local server and, by default, open a browser window.  The app presents the same core model outputs in a modern dark-themed UI with gold accents and includes:
+
+- **Four interactive tabs:** Overview, Unit Economics, Channel Analysis, and Sensitivity  
+- **Real-time controls:** Adjust scenario, price/volume sensitivities, and channel mix from the sidebar and instantly see updated KPIs  
+- **Premium visuals:** Plotly charts styled for 16:9 screen-share or projector format—ready for screenshots or export to pitch decks  
+- **Mobile-responsive layout:** Suitable for tablets and smaller displays during site visits or tasting-room demos  
+
+The web app is optional but recommended for live investor conversations when you want quick what-if analysis without reopening Excel.
+
 ## 4. Model Structure and Components
 
 The generated Excel workbook is organized into the following sheets:
