@@ -1,0 +1,69 @@
+[theme]
+# Primary accent color for interactive elements
+primaryColor = "#f59e0b"  # Gold accent
+
+# Background color for the main content area
+backgroundColor = "#0f172a"  # Dark blue base
+
+# Background color used for the sidebar and most interactive widgets
+secondaryBackgroundColor = "#1e293b"  # Slightly lighter blue
+
+# Color used for almost all text
+textColor = "#f8fafc"  # Almost white
+
+# Font family for all text in the app, except code blocks
+font = "Inter"  # Modern, clean font
+
+[browser]
+# Whether to send usage statistics to Streamlit
+gatherUsageStats = false
+
+# Icon shown in the browser tab
+favicon = "🥃"
+
+[server]
+# If false, will attempt to open a browser window on start
+headless = true
+
+# Whether to enable watchdog feature
+enableCORS = false
+
+# Whether to show a banner on startup
+showToolbar = false
+
+# Wait for the browser to connect to the server before starting the script
+waitForBrowser = true
+
+[runner]
+# Allows you to type to select a dropdown
+fastReruns = true
+
+[client]
+# Whether to enable st.cache. This makes app run faster but can add complexity
+caching = true
+
+# Controls whether uncaught app exceptions are displayed in the browser
+showErrorDetails = false
+
+# Maximum size, in megabytes, for files uploaded with the file_uploader
+# Increase if allowing larger financial data files
+maxUploadSize = 50
+
+[global]
+# By default, Streamlit checks if the Python file has changed, and if it has, it
+# will automatically re-run the script. Set this to false to disable.
+disableWatchdogWarning = true
+
+# Configure the ability to share widgets with other Streamlit apps
+widgetsKeepalive = false
+
+[mapbox]
+# Configure Mapbox token for the map widget (not needed for this app)
+token = ""
+
+[deprecation]
+# Set to false to disable the deprecation warning for the file uploader encoding.
+showfileUploaderEncoding = false
+
+# Set to false to disable the deprecation warning for using the global pyplot instance.
+showPyplotGlobalUse = false
