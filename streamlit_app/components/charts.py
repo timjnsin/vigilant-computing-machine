@@ -2113,7 +2113,16 @@ def create_sensitivity_heatmap(
     
     # Create enhanced sensitivity heatmap
     chart_id = chart_id or f"sensitivity-{uuid.uuid4().hex[:8]}"
-    fig = sensitivity_heatmap(
-        x_values=x_values,
-        y_values=y_values,
-        z_values=
+    fig = create_heatmap(
+        z=z_values,
+        x=x_labels,
+        y=y_labels,
+        title=title,
+        height=height,
+        text_template="{:" + format_spec + "}",
+        x_title=x_title,
+        y_title=y_title,
+        colorbar_title="IRR",
+        show_values=True,
+        chart_id=chart_id,
+        animate=animate
